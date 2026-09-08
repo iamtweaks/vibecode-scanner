@@ -43,16 +43,22 @@ function parseAllowedOrigins(): string[] {
 export function buildCorsHeaders(request: NextRequest, methods = 'GET, POST, OPTIONS'): HeadersInit {
   const origin = request.headers.get('origin')
   const allowedOrigins = parseAllowedOrigins()
-  const allowedOrigin = origin && allowedOrigins.includes(origin) ? origin : allowedOrigins[0]
+  // ponytail: omit ACAO when no/invalid origin — server-to-server calls have
+  // no browser to instruct, and falling back to a default origin leaks one
+  // tenant's CORS grant to any cache that keyed on Origin.
+  const allowedOrigin = origin && allowedOrigins.includes(origin) ? origin : undefined
 
-  return {
+  const headers: Record<string, string> = {
     ...securityHeaders,
-    'Access-Control-Allow-Origin': allowedOrigin,
     'Access-Control-Allow-Methods': methods,
     'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key',
     'Access-Control-Max-Age': '86400',
     Vary: 'Origin',
   }
+  if (allowedOrigin) {
+    headers['Access-Control-Allow-Origin'] = allowedOrigin
+  }
+  return headers
 }
 
 export function jsonWithSecurity<T>(
