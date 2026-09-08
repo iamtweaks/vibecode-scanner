@@ -49,8 +49,8 @@ export function getCorsHeaders(request?: NextRequest): Record<string, string> {
 		"Access-Control-Allow-Methods": "GET, POST, OPTIONS",
 		"Access-Control-Allow-Headers": "Content-Type, Authorization, X-API-Key",
 		"Access-Control-Max-Age": "86400",
-		// Do not advertise wildcard credentials - we use token auth, not cookies
-		"Access-Control-Allow-Credentials": "true",
+		// ponytail: token auth only (X-API-Key header), no cookies — never
+		// advertise credentials. Avoids the wildcard+credentials footgun.
 	};
 
 	if (allowOrigin) {
