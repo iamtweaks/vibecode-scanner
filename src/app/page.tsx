@@ -1490,6 +1490,10 @@ function Footer() {
 					>
 						Free Security Scanner for Vibe-Coded Apps
 					</a>
+					<div className="text-sm text-kanagawa-fgDim">
+						<p className="font-medium mb-1">Donations (SOL Mainnet)</p>
+						<code className="font-mono text-xs break-all">8ZNN5bomP4SVfDthfcFgXBSoZAgtngZAcKscddhoPrGA</code>
+					</div>
 					<p className="text-sm text-kanagawa-fgDim">
 						Copyright © {new Date().getFullYear()}
 					</p>

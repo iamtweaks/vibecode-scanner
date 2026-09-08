@@ -11,3 +11,8 @@ dist/
 # Misc
 *.log
 .DS_Store
+.vercel
+# Build artifacts
+tsconfig.tsbuildinfo
+# Pnpm workspace (monorepo marker, not used here)
+pnpm-workspace.yaml
