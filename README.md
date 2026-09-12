@@ -29,9 +29,9 @@ VibeChecker is a free security scanner designed for solo founders and developers
 ### Local Development
 
 ```bash
-# Clone the repository
-git clone https://github.com/iamtweaks/vibe-checker.git
-cd vibe-checker
+# Clone the repository (note: GitHub repo was renamed to `vibecode-scanner` in Sep 2026)
+git clone https://github.com/iamtweaks/vibecode-scanner.git
+cd vibecode-scanner
 
 # Install dependencies
 npm install
@@ -155,7 +155,7 @@ Perform a security scan on a GitHub repository or website.
 curl -X POST https://vibecheck.dev/api/scan \\
   -H "Content-Type: application/json" \\
   -d '{
-    "url": "https://github.com/iamtweaks/vibe-checker",
+    "url": "https://github.com/iamtweaks/vibecode-scanner",
     "type": "github"
   }'
 ```
@@ -167,7 +167,7 @@ curl -X POST https://vibecheck.dev/api/scan \\
   "success": true,
   "scanId": "550e8400-e29b-41d4-a716-446655440000",
   "type": "github",
-  "targetUrl": "https://github.com/iamtweaks/vibe-checker",
+  "targetUrl": "https://github.com/iamtweaks/vibecode-scanner",
   "status": "completed",
   "findings": [
     {
@@ -337,6 +337,22 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=
 ## 📄 License
 
 MIT License - see [LICENSE](LICENSE) for details.
+
+## 🤝 Contributing
+
+Issues and PRs are welcome at [github.com/iamtweaks/vibecode-scanner/issues](https://github.com/iamtweaks/vibecode-scanner/issues).
+
+**Best ways to contribute:**
+
+- **Report a vulnerability scanner bug** — open an issue with the URL you scanned, the rule ID that fired (or didn't), and what you expected.
+- **Suggest a new security check** — open an issue with the pattern you want detected (OWASP category, sample input that should trigger). If it's OWASP Top 10 related, label it `good-first-issue`.
+- **Improve rule accuracy** — false positives waste everyone's time. Send a PR with the test case + the rule change.
+- **UI / UX polish** — design improvements and a11y fixes are welcome via PR.
+- **Docs** — typos, broken links, missing setup steps: send a PR.
+
+**Don't open issues for:** deployment problems on your own fork (use Vercel/Dokploy support), reports about specific scanner results that should go to the site owner (use the scanner's report form, not this repo), or generic security questions (use OWASP / CERT directly).
+
+Labels we use: `bug`, `enhancement`, `new-rule`, `docs`, `good-first-issue`, `a11y`.
 
 ## 🙏 Acknowledgments
 
