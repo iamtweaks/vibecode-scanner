@@ -1,6 +1,7 @@
 import { Octokit } from '@octokit/rest'
 import { scanContent } from './rules'
 import { parseGitHubUrl } from '@/lib/validation'
+import { scanKnownCves, type PackageFile } from './known-cves'
 import type { GitHubScanResult, Finding, SeverityCounts } from '@/lib/types'
 
 // ============== Constants ==============
@@ -192,15 +193,34 @@ export async function scanGitHubRepo(
   
   // Scan files
   const findings: Finding[] = []
-  
+  // Track every package.json we touch so we can run the Known-CVE pass
+  // after the per-file content scan finishes.
+  const packageFiles: PackageFile[] = []
+
   for (const filePath of files) {
     const content = await fetchFileContent(octokit, owner, repo, filePath, branch)
     if (content) {
       const fileFindings = scanContent(content, filePath)
       findings.push(...fileFindings)
+      // Collect package.json contents — Known CVE scan needs the raw
+      // JSON, not the parsed AST, because the scanner re-parses locally
+      // (different package.json grammar assumptions = a footgun).
+      if (/package\.json$/i.test(filePath)) {
+        packageFiles.push({ filePath, content })
+      }
     }
   }
-  
+
+  // Wire the Known CVE scanner in here, AFTER every package.json is
+  // collected. Failures inside scanKnownCves are best-effort and never
+  // abort the overall scan.
+  try {
+    const cveFindings = await scanKnownCves(packageFiles, process.env)
+    findings.push(...cveFindings)
+  } catch (err) {
+    console.warn('Known CVE scan failed (continuing):', (err as Error).message)
+  }
+
   return {
     findings,
     severityCounts: calculateSeverityCounts(findings),

@@ -340,6 +340,40 @@ function checkMutatingRouteWithoutCsrf(content: string, filePath: string): boole
 
 export const GITHUB_SCANNER_RULES: ScanRule[] = [
 	{
+		// Sentinel rule — never pattern-matched. The actual finding is
+		// emitted by src/lib/scanners/known-cves.ts (scanKnownCves) which
+		// is wired into src/lib/scanners/github.ts after the package.json
+		// extraction step. Registered here so the ruleId shows up in
+		// tooling / dashboards / tests that introspect GITHUB_SCANNER_RULES.
+		id: "KNOWN_CVE",
+		pattern: /(?!)/,
+		severity: "high",
+		title: "Known CVE Match (Sentinel-Bench top-100)",
+		description:
+			"A dependency declared in package.json matches a CVE in the Sentinel-Bench top-100 feed.",
+		remediation: "Update the affected dependency to a patched version.",
+	},
+	{
+		// Same — KEV variant. Severity bumped to critical.
+		id: "KNOWN_CVE_KEV",
+		pattern: /(?!)/,
+		severity: "critical",
+		title: "Known CVE Match — CISA KEV (Sentinel-Bench top-100)",
+		description:
+			"A dependency matches a CVE that appears on the CISA Known Exploited Vulnerabilities catalog.",
+		remediation: "Patch immediately — this CVE is being exploited in the wild.",
+	},
+	{
+		// Same — PoC variant. Severity critical when a public PoC exists.
+		id: "KNOWN_CVE_WITH_POC",
+		pattern: /(?!)/,
+		severity: "critical",
+		title: "Known CVE Match — Public PoC Available (Sentinel-Bench top-100)",
+		description:
+			"A dependency matches a CVE that has a publicly available proof-of-concept exploit.",
+		remediation: "Patch immediately — exploit code is public and weaponization is trivial.",
+	},
+	{
 		id: "SUPABASE001",
 		pattern:
 			/(?:SUPABASE|supabase)[_-]?(?:ANON|SERVICE[_-]?ROLE|KEY|URL)[^\n]{0,50}["'][a-zA-Z0-9_-]{20,}["']/gi,
