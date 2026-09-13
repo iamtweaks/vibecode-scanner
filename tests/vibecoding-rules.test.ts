@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { GITHUB_SCANNER_RULES } from "../src/lib/scanners/rules";
+import {
+	_scanWithCache as testScanWithCache,
+	__internals,
+	type PackageFile,
+	type VulnEntry,
+} from "../src/lib/scanners/known-cves";
 
 const RULE_IDS = new Set(GITHUB_SCANNER_RULES.map((r) => r.id));
 
@@ -270,5 +276,315 @@ describe("V0001 (refined) — dangerouslySetInnerHTML without sanitizer", () => 
 	it("does NOT match when xss library is used", () => {
 		const code = `<div dangerouslySetInnerHTML={{ __html: xss(html) }} />`;
 		expect(matches("V0001", code)).toBe(false);
+	});
+
+	// ============== KNOWN_CVE rules — registry ==============
+
+	describe("KNOWN_CVE rules — registry", () => {
+		it("KNOWN_CVE / KNOWN_CVE_KEV / KNOWN_CVE_WITH_POC are registered", () => {
+			expect(RULE_IDS.has("KNOWN_CVE")).toBe(true);
+			expect(RULE_IDS.has("KNOWN_CVE_KEV")).toBe(true);
+			expect(RULE_IDS.has("KNOWN_CVE_WITH_POC")).toBe(true);
+		});
+
+		it("severities follow spec: high baseline, critical for KEV & PoC", () => {
+			expect(findById("KNOWN_CVE").severity).toBe("high");
+			expect(findById("KNOWN_CVE_KEV").severity).toBe("critical");
+			expect(findById("KNOWN_CVE_WITH_POC").severity).toBe("critical");
+		});
+	});
+
+	// ============== scanKnownCves — behavior ==============
+
+	function makeVuln(over: Partial<VulnEntry>): VulnEntry {
+		return {
+			cve_id: "CVE-XXXX-00000",
+			is_kev: false,
+			poc_public: false,
+			exploited_in_wild: false,
+			score: null,
+			rationale: null,
+			vendors: [],
+			products: [],
+			remediation: null,
+			...over,
+		};
+	}
+
+	describe("scanKnownCves — dependency matching", () => {
+		it("emits a finding for lodash@4.17.20 when CVE-2020-28500 is in the cache", async () => {
+			const cache = new Map<string, VulnEntry>();
+			const lodashVuln = makeVuln({
+				cve_id: "CVE-2020-28500",
+				is_kev: false,
+				poc_public: true,
+				products: ["lodash"],
+				rationale: "ReDoS in lodash.toNumber",
+				remediation: "Upgrade lodash to 4.17.21 or later.",
+			});
+			cache.set(lodashVuln.cve_id, lodashVuln);
+
+			const packageFiles: PackageFile[] = [
+				{
+					filePath: "package.json",
+					content: JSON.stringify({
+						name: "demo",
+						dependencies: { lodash: "4.17.20" },
+					}),
+				},
+			];
+
+			const findings = await testScanWithCache(
+				packageFiles,
+				cache,
+			);
+			expect(findings).toHaveLength(1);
+			const f = findings[0];
+			expect(f.ruleId).toBe("KNOWN_CVE_WITH_POC");
+			expect(f.severity).toBe("critical");
+			expect(f.id).toContain("CVE-2020-28500");
+			expect(f.id).toContain("lodash");
+			expect(f.filePath).toBe("package.json");
+			expect(f.title.toLowerCase()).toContain("lodash");
+			expect(f.remediation).toContain("Upgrade");
+		});
+
+		it("emits a KEV (critical) finding when is_kev=true", async () => {
+			const cache = new Map<string, VulnEntry>();
+			cache.set(
+				"CVE-2024-99999",
+				makeVuln({
+					cve_id: "CVE-2024-99999",
+					is_kev: true,
+					poc_public: false,
+					exploited_in_wild: true,
+					products: ["express"],
+					rationale: "Active exploitation in the wild",
+				}),
+			);
+			const packageFiles: PackageFile[] = [
+				{
+					filePath: "package.json",
+					content: JSON.stringify({
+						name: "demo",
+						dependencies: { express: "4.17.1" },
+					}),
+				},
+			];
+			const findings = await testScanWithCache(
+				packageFiles,
+				cache,
+			);
+			expect(findings).toHaveLength(1);
+			expect(findings[0].ruleId).toBe("KNOWN_CVE_KEV");
+			expect(findings[0].severity).toBe("critical");
+			expect(findings[0].description.toLowerCase()).toContain("kev");
+		});
+
+		it("emits a generic high-severity finding when neither KEV nor PoC", async () => {
+			const cache = new Map<string, VulnEntry>();
+			cache.set(
+				"CVE-2023-00001",
+				makeVuln({
+					cve_id: "CVE-2023-00001",
+					is_kev: false,
+					poc_public: false,
+					products: ["axios"],
+				}),
+			);
+			const packageFiles: PackageFile[] = [
+				{
+					filePath: "package.json",
+					content: JSON.stringify({
+						name: "demo",
+						dependencies: { axios: "0.27.2" },
+					}),
+				},
+			];
+			const findings = await testScanWithCache(
+				packageFiles,
+				cache,
+			);
+			expect(findings).toHaveLength(1);
+			expect(findings[0].ruleId).toBe("KNOWN_CVE");
+			expect(findings[0].severity).toBe("high");
+		});
+
+		it("returns [] when there are no package.json files", async () => {
+			const cache = new Map<string, VulnEntry>();
+			cache.set(
+				"CVE-2020-28500",
+				makeVuln({ cve_id: "CVE-2020-28500", products: ["lodash"] }),
+			);
+			const findings = await testScanWithCache([], cache);
+			expect(findings).toEqual([]);
+		});
+
+		it("returns [] when the cache is empty (no API data)", async () => {
+			const cache = new Map<string, VulnEntry>();
+			const packageFiles: PackageFile[] = [
+				{
+					filePath: "package.json",
+					content: JSON.stringify({
+						name: "demo",
+						dependencies: { lodash: "4.17.20" },
+					}),
+				},
+			];
+			const findings = await testScanWithCache(
+				packageFiles,
+				cache,
+			);
+			expect(findings).toEqual([]);
+		});
+
+		it("scans devDependencies, not only dependencies", async () => {
+			const cache = new Map<string, VulnEntry>();
+			cache.set(
+				"CVE-2022-00001",
+				makeVuln({
+					cve_id: "CVE-2022-00001",
+					products: ["vite"],
+					is_kev: false,
+					poc_public: false,
+				}),
+			);
+			// Only declare vite in devDependencies — must still flag.
+			const packageFiles: PackageFile[] = [
+				{
+					filePath: "package.json",
+					content: JSON.stringify({
+						name: "demo",
+						devDependencies: { vite: "3.0.0" },
+					}),
+				},
+			];
+			const findings = await testScanWithCache(
+				packageFiles,
+				cache,
+			);
+			expect(findings).toHaveLength(1);
+			expect(findings[0].ruleId).toBe("KNOWN_CVE");
+			expect(findings[0].title.toLowerCase()).toContain("vite");
+		});
+
+		it("case-insensitive matching on dependency name and product", async () => {
+			const cache = new Map<string, VulnEntry>();
+			cache.set(
+				"CVE-2021-99999",
+				makeVuln({ cve_id: "CVE-2021-99999", products: ["Lodash"] }),
+			);
+			const packageFiles: PackageFile[] = [
+				{
+					filePath: "package.json",
+					content: JSON.stringify({
+						name: "demo",
+						dependencies: { LODASH: "4.17.20" },
+					}),
+				},
+			];
+			const findings = await testScanWithCache(
+				packageFiles,
+				cache,
+			);
+			expect(findings).toHaveLength(1);
+			expect(findings[0].id).toContain("lodash");
+		});
+
+		it("does NOT match when the dep name has no overlap with any product", async () => {
+			const cache = new Map<string, VulnEntry>();
+			cache.set(
+				"CVE-2021-11111",
+				makeVuln({ cve_id: "CVE-2021-11111", products: ["ColdFusion"] }),
+			);
+			const packageFiles: PackageFile[] = [
+				{
+					filePath: "package.json",
+					content: JSON.stringify({
+						name: "demo",
+						dependencies: { lodash: "4.17.20" },
+					}),
+				},
+			];
+			const findings = await testScanWithCache(
+				packageFiles,
+				cache,
+			);
+			expect(findings).toEqual([]);
+		});
+
+		it("skips package.json that fails to parse", async () => {
+			const cache = new Map<string, VulnEntry>();
+			cache.set(
+				"CVE-2020-28500",
+				makeVuln({ cve_id: "CVE-2020-28500", products: ["lodash"] }),
+			);
+			const packageFiles: PackageFile[] = [
+				{ filePath: "package.json", content: "{ this is not json" },
+			];
+			const findings = await testScanWithCache(
+				packageFiles,
+				cache,
+			);
+			expect(findings).toEqual([]);
+		});
+	});
+
+	// ============== scanKnownCves — cache primitives ==============
+
+	describe("scanKnownCves — cache primitives", () => {
+		it("caps the cache at CACHE_SIZE entries", () => {
+			const cache = __internals.createCache(100);
+			for (let i = 0; i < 150; i++) {
+				__internals.cacheSet(
+					cache,
+					makeVuln({ cve_id: `CVE-2024-${String(i).padStart(5, "0")}` }),
+					100,
+				);
+			}
+			expect(cache.size).toBe(100);
+			// Oldest 50 entries should have been evicted.
+			expect(cache.has("CVE-2024-00000")).toBe(false);
+			expect(cache.has("CVE-2024-00049")).toBe(false);
+			// Newest entries should still be present.
+			expect(cache.has("CVE-2024-00149")).toBe(true);
+		});
+
+		it("cacheGet refreshes LRU order", () => {
+			const cache = __internals.createCache(3);
+			__internals.cacheSet(cache, makeVuln({ cve_id: "CVE-A" }), 3);
+			__internals.cacheSet(cache, makeVuln({ cve_id: "CVE-B" }), 3);
+			__internals.cacheSet(cache, makeVuln({ cve_id: "CVE-C" }), 3);
+			// Touch CVE-A — it should now be the most-recently-used.
+			const touched = __internals.cacheGet(cache, "CVE-A");
+			expect(touched?.cve_id).toBe("CVE-A");
+			// Insert a 4th — oldest (CVE-B now, since A was touched) is evicted.
+			__internals.cacheSet(cache, makeVuln({ cve_id: "CVE-D" }), 3);
+			expect(cache.has("CVE-B")).toBe(false);
+			expect(cache.has("CVE-A")).toBe(true);
+			expect(cache.has("CVE-C")).toBe(true);
+			expect(cache.has("CVE-D")).toBe(true);
+		});
+
+		it("parseFeed rejects malformed JSON and missing data[]", () => {
+			expect(__internals.parseFeed("not json")).toEqual([]);
+			expect(__internals.parseFeed('{"data": "not an array"}')).toEqual([]);
+			expect(
+				__internals.parseFeed(
+					'{"data": [{"cve_id": "X", "is_kev": false, "poc_public": false, "exploited_in_wild": false, "vendors": [], "products": []}]}',
+				),
+			).toHaveLength(1);
+		});
+
+		it("depMatchesVuln handles scoped packages and case-insensitivity", () => {
+			const v = makeVuln({
+				cve_id: "CVE-X",
+				products: ["@scope/lib"],
+			});
+			expect(__internals.depMatchesVuln("@scope/lib", v)).toBe(true);
+			expect(__internals.depMatchesVuln("lib", v)).toBe(true);
+			expect(__internals.depMatchesVuln("LIB", v)).toBe(true);
+			expect(__internals.depMatchesVuln("lodash", v)).toBe(false);
+		});
 	});
 });
