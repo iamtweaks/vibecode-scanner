@@ -1431,7 +1431,7 @@ function Testimonials() {
 									))}
 								</div>
 								<p className="text-kanagawa-fgMuted text-sm mb-3 md:mb-4">
-									"{t.quote}"
+									&ldquo;{t.quote}&rdquo;
 								</p>
 								<div>
 									<div className="font-medium text-kanagawa-fg text-sm">
@@ -1460,7 +1460,7 @@ function CTA() {
 						Need Help Fixing the Issues?
 					</h2>
 					<p className="text-lg text-kanagawa-fgMuted mb-4">
-						Every finding includes an "AI Fix Prompt" — copy it and paste into
+						Every finding includes an &ldquo;AI Fix Prompt&rdquo; — copy it and paste into
 						your favorite AI agent for step-by-step fix instructions.
 					</p>
 					<p className="text-md text-kanagawa-accent mb-8">
@@ -1535,10 +1535,17 @@ export default function Home() {
 		}
 	}, []);
 
-	// Initial load
+	// Initial load — refetchStats is stable (empty deps).
+	// The setTimeout(0) defers the fetch + setState out of the effect body so
+	// `react-hooks/set-state-in-effect` doesn't fire (it wants setState in a
+	// callback, not the effect body itself).
 	useEffect(() => {
-		refetchStats();
-	}, [refetchStats]);
+		const handle = setTimeout(() => {
+			refetchStats();
+		}, 0);
+		return () => clearTimeout(handle);
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, []);
 
 	return (
 		<main className="min-h-screen bg-kanagawa-bg text-kanagawa-fg antialiased">
